@@ -9,7 +9,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
 const OWNER_ID = "715316760462491673";
-const ALLOWED_CHANNEL_ID = "1488832547864580126"; // bot only works here
+const ALLOWED_CHANNEL_ID = "1488832547864580126";
 
 // ================= DATA =================
 let balances = {};
@@ -30,30 +30,28 @@ function saveData() {
 
 loadData();
 
-// ================= CLIENT =================
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
-});
-
 // ================= HELPERS =================
 function getBalance(userId) {
     if (!balances[userId]) balances[userId] = 500;
     return balances[userId];
 }
 
-// ================= BOT READY =================
+// ================= CLIENT =================
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds]
+});
+
 client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ================= COMMANDS =================
+// ================= COMMAND HANDLER =================
 client.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    // lock bot to one channel
     if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
         return interaction.reply({
-            content: "Use this bot in the correct channel.",
+            content: "Wrong channel.",
             ephemeral: true
         });
     }
@@ -63,17 +61,17 @@ client.on("interactionCreate", async interaction => {
 
     getBalance(userId);
 
-    // -------- NOMINATE --------
+    // ================= NOMINATE =================
     if (name === "nominate") {
         const player = interaction.options.getString("player");
         const amount = interaction.options.getInteger("amount");
 
         if (amount < 20) {
-            return interaction.reply("Minimum bet is 20 abz bucks.");
+            return interaction.reply("Min bet is 20 abz bucks.");
         }
 
         if (balances[userId] < amount) {
-            return interaction.reply("You don't have enough abz bucks.");
+            return interaction.reply("Not enough abz bucks.");
         }
 
         balances[userId] -= amount;
@@ -84,85 +82,84 @@ client.on("interactionCreate", async interaction => {
         saveData();
 
         return interaction.reply(
-            `${interaction.user.username} bet ${amount} abz bucks on "${player}".`
+            `${interaction.user.username} bet ${amount} on "${player}"`
         );
     }
 
-    // -------- WINNER (OWNER ONLY) --------
+    // ================= WINNER =================
     if (name === "winner") {
         if (userId !== OWNER_ID) {
-            return interaction.reply("Only the owner can use this.");
+            return interaction.reply("Only owner can use this.");
         }
 
         const player = interaction.options.getString("player");
-
         const bets = nominations[player];
+
         if (!bets || bets.length === 0) {
-            return interaction.reply("No bets on that player.");
+            return interaction.reply("No bets on this player.");
         }
 
         const totalPool = Object.values(nominations)
             .flat()
-            .reduce((a, b) => a + b.amount, 0);
+            .reduce((sum, b) => sum + b.amount, 0);
 
-        const winnerPool = bets.reduce((a, b) => a + b.amount, 0);
+        const winnerTotal = bets.reduce((sum, b) => sum + b.amount, 0);
+        const profitPool = totalPool - winnerTotal;
 
-        const profitPool = totalPool - winnerPool;
-
-        const split = profitPool / bets.length;
+        const split = bets.length > 0 ? profitPool / bets.length : 0;
 
         for (const bet of bets) {
-            balances[bet.userId] += bet.amount; // return original bet
-            balances[bet.userId] += split; // profit share
+            getBalance(bet.userId);
+            balances[bet.userId] += bet.amount + split;
         }
 
         nominations = {};
         saveData();
 
         return interaction.reply(
-            `${player} wins!\nTotal pool: ${totalPool}\nEach winner gets profit share.`
+            `${player} wins!\nPool: ${totalPool}`
         );
     }
 
-    // -------- LEADERBOARD --------
+    // ================= LEADERBOARD =================
     if (name === "leaderboard") {
         const sorted = Object.entries(balances)
             .sort((a, b) => b[1] - a[1]);
 
         let msg = "**ABZ Bucks Leaderboard**\n\n";
 
-        for (const [userId, bal] of sorted) {
-            msg += `<@${userId}>: ${bal} abz bucks\n`;
+        for (const [id, bal] of sorted) {
+            msg += `<@${id}> — ${bal} abz bucks\n`;
         }
 
         return interaction.reply(msg);
     }
 
-    // -------- TRANSFER --------
+    // ================= TRANSFER =================
     if (name === "transfer") {
         const target = interaction.options.getUser("user");
         const amount = interaction.options.getInteger("amount");
 
+        if (!target) return interaction.reply("Invalid user.");
         if (amount <= 0) return interaction.reply("Invalid amount.");
         if (balances[userId] < amount) {
             return interaction.reply("Not enough abz bucks.");
         }
 
-        balances[userId] -= amount;
         getBalance(target.id);
+
+        balances[userId] -= amount;
         balances[target.id] += amount;
 
         saveData();
 
-        return interaction.reply(
-            `Transferred ${amount} abz bucks to ${target.username}.`
-        );
+        return interaction.reply(`Sent ${amount} abz bucks to ${target.username}`);
     }
 
-    // -------- WEEKLY +10 --------
+    // ================= WEEKLY =================
     if (name === "weekly") {
         if (userId !== OWNER_ID) {
-            return interaction.reply("Only owner can run weekly update.");
+            return interaction.reply("Owner only.");
         }
 
         for (const id in balances) {
@@ -170,58 +167,57 @@ client.on("interactionCreate", async interaction => {
         }
 
         saveData();
-
-        return interaction.reply("Everyone received +10 abz bucks.");
+        return interaction.reply("Everyone got +10 abz bucks.");
     }
 
-    // -------- CLEAR NOMINEES --------
+    // ================= CLEAR =================
     if (name === "clearnominees") {
         if (userId !== OWNER_ID) {
-            return interaction.reply("Only owner can clear nominations.");
+            return interaction.reply("Owner only.");
         }
 
         nominations = {};
         saveData();
 
-        return interaction.reply("Nominations cleared.");
+        return interaction.reply("Cleared nominations.");
     }
 });
 
-// ================= REGISTER COMMANDS =================
+// ================= COMMANDS =================
 const commands = [
     new SlashCommandBuilder()
         .setName("nominate")
         .setDescription("Bet abz bucks on a player")
         .addStringOption(o =>
-            o.setName("player").setRequired(true).setDescription("Any name"))
+            o.setName("player").setRequired(true).setDescription("Name"))
         .addIntegerOption(o =>
             o.setName("amount").setRequired(true).setDescription("Min 20")),
 
     new SlashCommandBuilder()
         .setName("winner")
-        .setDescription("Declare winner (owner only)")
+        .setDescription("Set winner (owner only)")
         .addStringOption(o =>
-            o.setName("player").setRequired(true)),
+            o.setName("player").setRequired(true).setDescription("Winner name")),
 
     new SlashCommandBuilder()
         .setName("leaderboard")
-        .setDescription("Show abz bucks leaderboard"),
+        .setDescription("Show abz bucks"),
 
     new SlashCommandBuilder()
         .setName("transfer")
-        .setDescription("Send abz bucks to someone")
+        .setDescription("Send abz bucks")
         .addUserOption(o =>
-            o.setName("user").setRequired(true))
+            o.setName("user").setRequired(true).setDescription("User"))
         .addIntegerOption(o =>
-            o.setName("amount").setRequired(true)),
+            o.setName("amount").setRequired(true).setDescription("Amount")),
 
     new SlashCommandBuilder()
         .setName("weekly")
-        .setDescription("Give everyone +10 (owner only)"),
+        .setDescription("Give +10 (owner only)"),
 
     new SlashCommandBuilder()
         .setName("clearnominees")
-        .setDescription("Clear all nominations (owner only)")
+        .setDescription("Clear bets (owner only)")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -234,7 +230,7 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
     console.log("Commands registered.");
 })();
 
-// ================= KEEP ALIVE (RENDER) =================
+// ================= EXPRESS KEEP ALIVE =================
 const app = express();
 
 app.get("/", (req, res) => {
@@ -243,5 +239,5 @@ app.get("/", (req, res) => {
 
 app.listen(3000);
 
-// ================= START BOT =================
+// ================= LOGIN =================
 client.login(TOKEN);
