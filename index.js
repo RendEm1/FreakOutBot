@@ -8,8 +8,8 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const OWNER_ID = "YOUR_USER_ID";
-const ALLOWED_CHANNEL_ID = "YOUR_CHANNEL_ID"; // bot only works here
+const OWNER_ID = "715316760462491673";
+const ALLOWED_CHANNEL_ID = "1488832547864580126"; // bot only works here
 
 // ================= DATA =================
 let balances = {};
