@@ -187,7 +187,7 @@ client.on("interactionCreate", async interaction => {
 const commands = [
     new SlashCommandBuilder()
         .setName("nominate")
-        .setDescription("Bet abz bucks on a player")
+        .setDescription("Just A Game")
         .addStringOption(o =>
             o.setName("player").setRequired(true).setDescription("Name"))
         .addIntegerOption(o =>
@@ -201,11 +201,11 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName("leaderboard")
-        .setDescription("Show abz bucks"),
+        .setDescription("Just A Game"),
 
     new SlashCommandBuilder()
         .setName("transfer")
-        .setDescription("Send abz bucks")
+        .setDescription("Just A Game")
         .addUserOption(o =>
             o.setName("user").setRequired(true).setDescription("User"))
         .addIntegerOption(o =>
