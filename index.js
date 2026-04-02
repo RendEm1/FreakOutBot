@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const fs = require('fs/promises');
+const express = require('express');
 
 // ================= CONFIG =================
 const TOKEN = process.env.TOKEN;
@@ -57,7 +58,7 @@ client.once("ready", () => {
     }, 60000);
 });
 
-// ================= INTERACTIONS =================
+// ================= COMMAND HANDLER =================
 client.on("interactionCreate", async (interaction) => {
     try {
         if (!ready) return;
@@ -75,7 +76,7 @@ client.on("interactionCreate", async (interaction) => {
 
         if (!balances[userId]) balances[userId] = 500;
 
-        // ========== NOMINATE ==========
+        // ===== NOMINATE =====
         if (cmd === "nominate") {
             const player = interaction.options.getString("player");
             const amount = interaction.options.getInteger("amount");
@@ -93,7 +94,7 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.reply(`${interaction.user.username} bet ${amount} on ${player}`);
         }
 
-        // ========== WINNER ==========
+        // ===== WINNER =====
         if (cmd === "winner") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
@@ -122,7 +123,7 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.reply(`${player} wins! Pool: ${totalPool}`);
         }
 
-        // ========== LEADERBOARD ==========
+        // ===== LEADERBOARD =====
         if (cmd === "leaderboard") {
             const sorted = Object.entries(balances)
                 .sort((a, b) => b[1] - a[1]);
@@ -136,18 +137,13 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.reply(msg);
         }
 
-        // ========== TRANSFER ==========
+        // ===== TRANSFER =====
         if (cmd === "transfer") {
             const target = interaction.options.getUser("user");
             const amount = interaction.options.getInteger("amount");
 
-            if (!target || amount <= 0) {
-                return interaction.reply("Invalid input.");
-            }
-
-            if (balances[userId] < amount) {
-                return interaction.reply("Not enough.");
-            }
+            if (!target || amount <= 0) return interaction.reply("Invalid input.");
+            if (balances[userId] < amount) return interaction.reply("Not enough.");
 
             if (!balances[target.id]) balances[target.id] = 500;
 
@@ -159,7 +155,7 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.reply(`Sent ${amount} to ${target.username}`);
         }
 
-        // ========== WEEKLY ==========
+        // ===== WEEKLY =====
         if (cmd === "weekly") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
@@ -171,7 +167,7 @@ client.on("interactionCreate", async (interaction) => {
             return interaction.reply("Everyone got +10.");
         }
 
-        // ========== CLEAR ==========
+        // ===== CLEAR =====
         if (cmd === "clearnominees") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
@@ -190,43 +186,33 @@ client.on("interactionCreate", async (interaction) => {
 const commands = [
     new SlashCommandBuilder()
         .setName("nominate")
-        .setDescription("Bet system")
+        .setDescription("Bet on a player")
         .addStringOption(o =>
-            o.setName("player")
-                .setDescription("Player name")
-                .setRequired(true))
+            o.setName("player").setDescription("Player name").setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount")
-                .setDescription("Min 20")
-                .setRequired(true)),
+            o.setName("amount").setDescription("Min 20").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("winner")
-        .setDescription("Owner only command")
+        .setDescription("Declare winner (owner only)")
         .addStringOption(o =>
-            o.setName("player")
-                .setDescription("Winner")
-                .setRequired(true)),
+            o.setName("player").setDescription("Winner").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("leaderboard")
-        .setDescription("Show balances"),
+        .setDescription("Show abz bucks leaderboard"),
 
     new SlashCommandBuilder()
         .setName("transfer")
-        .setDescription("Send money")
+        .setDescription("Send abz bucks")
         .addUserOption(o =>
-            o.setName("user")
-                .setDescription("User")
-                .setRequired(true))
+            o.setName("user").setDescription("User").setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount")
-                .setDescription("Amount")
-                .setRequired(true)),
+            o.setName("amount").setDescription("Amount").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("weekly")
-        .setDescription("Owner reward"),
+        .setDescription("Give everyone +10 (owner only)"),
 
     new SlashCommandBuilder()
         .setName("clearnominees")
@@ -250,6 +236,19 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
         console.log("Command register failed:", err);
     }
 })();
+
+// ================= EXPRESS (RENDER FIX) =================
+const app = express();
+
+app.get("/", (req, res) => {
+    res.send("bot alive");
+});
+
+// THIS LINE FIXES YOUR BOT DYING
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("Web server running on port", PORT);
+});
 
 // ================= LOGIN =================
 client.login(TOKEN);
