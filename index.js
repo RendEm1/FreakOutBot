@@ -57,24 +57,26 @@ client.once("ready", () => {
     }, 60000);
 });
 
-// ================= COMMAND HANDLER =================
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async (interaction) => {
     try {
         if (!ready) return;
-
         if (!interaction.isChatInputCommand()) return;
 
         if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
-            return interaction.reply({ content: "Wrong channel.", ephemeral: true });
+            return interaction.reply({
+                content: "Wrong channel.",
+                ephemeral: true
+            });
         }
 
         const userId = interaction.user.id;
-        const name = interaction.commandName;
+        const cmd = interaction.commandName;
 
         if (!balances[userId]) balances[userId] = 500;
 
         // ========== NOMINATE ==========
-        if (name === "nominate") {
+        if (cmd === "nominate") {
             const player = interaction.options.getString("player");
             const amount = interaction.options.getInteger("amount");
 
@@ -92,7 +94,7 @@ client.on("interactionCreate", async (interaction) => {
         }
 
         // ========== WINNER ==========
-        if (name === "winner") {
+        if (cmd === "winner") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
             const player = interaction.options.getString("player");
@@ -100,7 +102,8 @@ client.on("interactionCreate", async (interaction) => {
 
             if (!bets?.length) return interaction.reply("No bets.");
 
-            const totalPool = Object.values(nominations).flat()
+            const totalPool = Object.values(nominations)
+                .flat()
                 .reduce((sum, b) => sum + b.amount, 0);
 
             const winnerTotal = bets.reduce((sum, b) => sum + b.amount, 0);
@@ -120,7 +123,7 @@ client.on("interactionCreate", async (interaction) => {
         }
 
         // ========== LEADERBOARD ==========
-        if (name === "leaderboard") {
+        if (cmd === "leaderboard") {
             const sorted = Object.entries(balances)
                 .sort((a, b) => b[1] - a[1]);
 
@@ -134,12 +137,17 @@ client.on("interactionCreate", async (interaction) => {
         }
 
         // ========== TRANSFER ==========
-        if (name === "transfer") {
+        if (cmd === "transfer") {
             const target = interaction.options.getUser("user");
             const amount = interaction.options.getInteger("amount");
 
-            if (!target || amount <= 0) return interaction.reply("Invalid input.");
-            if (balances[userId] < amount) return interaction.reply("Not enough.");
+            if (!target || amount <= 0) {
+                return interaction.reply("Invalid input.");
+            }
+
+            if (balances[userId] < amount) {
+                return interaction.reply("Not enough.");
+            }
 
             if (!balances[target.id]) balances[target.id] = 500;
 
@@ -152,17 +160,19 @@ client.on("interactionCreate", async (interaction) => {
         }
 
         // ========== WEEKLY ==========
-        if (name === "weekly") {
+        if (cmd === "weekly") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
-            for (const id in balances) balances[id] += 10;
+            for (const id in balances) {
+                balances[id] += 10;
+            }
 
             await saveData();
             return interaction.reply("Everyone got +10.");
         }
 
         // ========== CLEAR ==========
-        if (name === "clearnominees") {
+        if (cmd === "clearnominees") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
             nominations = {};
@@ -182,15 +192,21 @@ const commands = [
         .setName("nominate")
         .setDescription("Bet system")
         .addStringOption(o =>
-            o.setName("player").setRequired(true))
+            o.setName("player")
+                .setDescription("Player name")
+                .setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount").setRequired(true)),
+            o.setName("amount")
+                .setDescription("Min 20")
+                .setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("winner")
-        .setDescription("Owner only")
+        .setDescription("Owner only command")
         .addStringOption(o =>
-            o.setName("player").setRequired(true)),
+            o.setName("player")
+                .setDescription("Winner")
+                .setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("leaderboard")
@@ -200,26 +216,30 @@ const commands = [
         .setName("transfer")
         .setDescription("Send money")
         .addUserOption(o =>
-            o.setName("user").setRequired(true))
+            o.setName("user")
+                .setDescription("User")
+                .setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount").setRequired(true)),
+            o.setName("amount")
+                .setDescription("Amount")
+                .setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("weekly")
-        .setDescription("Owner add +10"),
+        .setDescription("Owner reward"),
 
     new SlashCommandBuilder()
         .setName("clearnominees")
-        .setDescription("Clear bets")
+        .setDescription("Clear all bets")
 ].map(c => c.toJSON());
 
 // ================= REGISTER =================
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-    await loadData();
-
     try {
+        await loadData();
+
         await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
             { body: commands }
