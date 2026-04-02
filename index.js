@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const fs = require('fs/promises');
-const express = require('express');
 
 // ================= CONFIG =================
 const TOKEN = process.env.TOKEN;
@@ -14,6 +13,7 @@ const ALLOWED_CHANNEL_ID = "1488832547864580126";
 // ================= DATA =================
 let balances = {};
 let nominations = {};
+let ready = false;
 
 // ================= LOAD / SAVE =================
 async function loadData() {
@@ -22,7 +22,7 @@ async function loadData() {
         balances = data.balances || {};
         nominations = data.nominations || {};
         console.log("Data loaded");
-    } catch (err) {
+    } catch {
         console.log("No data file yet, starting fresh");
     }
 }
@@ -38,60 +38,40 @@ async function saveData() {
     }
 }
 
-// ================= SAFE HELPERS =================
-function getBalance(userId) {
-    if (!balances[userId]) balances[userId] = 500;
-    return balances[userId];
-}
-
 // ================= CLIENT =================
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// ================= READY =================
-client.once("ready", () => {
-    console.log(`Logged in as ${client.user.tag}`);
-
-    setInterval(() => {
-        console.log("heartbeat - bot alive | ws:", client.ws.status);
-    }, 60000);
-});
-
-// ================= RECOVERY LOGGING =================
-client.on("reconnecting", () => {
-    console.log("Reconnecting to Discord...");
-});
-
-client.on("resume", () => {
-    console.log("Reconnected to Discord!");
-});
-
-client.on("disconnect", () => {
-    console.log("Disconnected from Discord gateway");
-});
-
-client.on("error", console.error);
-
+// ================= SAFETY =================
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
+// ================= READY =================
+client.once("ready", () => {
+    ready = true;
+    console.log(`Logged in as ${client.user.tag}`);
+
+    setInterval(() => {
+        console.log("heartbeat alive | ws:", client.ws.status);
+    }, 60000);
+});
+
 // ================= COMMAND HANDLER =================
-client.on("interactionCreate", async interaction => {
+client.on("interactionCreate", async (interaction) => {
     try {
+        if (!ready) return;
+
         if (!interaction.isChatInputCommand()) return;
 
         if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
-            return interaction.reply({
-                content: "Wrong channel.",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "Wrong channel.", ephemeral: true });
         }
 
         const userId = interaction.user.id;
         const name = interaction.commandName;
 
-        getBalance(userId);
+        if (!balances[userId]) balances[userId] = 500;
 
         // ========== NOMINATE ==========
         if (name === "nominate") {
@@ -99,7 +79,7 @@ client.on("interactionCreate", async interaction => {
             const amount = interaction.options.getInteger("amount");
 
             if (amount < 20) return interaction.reply("Min bet is 20.");
-            if (balances[userId] < amount) return interaction.reply("Not enough abz bucks.");
+            if (balances[userId] < amount) return interaction.reply("Not enough.");
 
             balances[userId] -= amount;
 
@@ -108,7 +88,7 @@ client.on("interactionCreate", async interaction => {
 
             await saveData();
 
-            return interaction.reply(`${interaction.user.username} bet ${amount} on "${player}"`);
+            return interaction.reply(`${interaction.user.username} bet ${amount} on ${player}`);
         }
 
         // ========== WINNER ==========
@@ -118,9 +98,7 @@ client.on("interactionCreate", async interaction => {
             const player = interaction.options.getString("player");
             const bets = nominations[player];
 
-            if (!bets || bets.length === 0) {
-                return interaction.reply("No bets.");
-            }
+            if (!bets?.length) return interaction.reply("No bets.");
 
             const totalPool = Object.values(nominations).flat()
                 .reduce((sum, b) => sum + b.amount, 0);
@@ -131,7 +109,7 @@ client.on("interactionCreate", async interaction => {
             const split = bets.length ? profitPool / bets.length : 0;
 
             for (const bet of bets) {
-                getBalance(bet.userId);
+                if (!balances[bet.userId]) balances[bet.userId] = 500;
                 balances[bet.userId] += bet.amount + split;
             }
 
@@ -160,11 +138,10 @@ client.on("interactionCreate", async interaction => {
             const target = interaction.options.getUser("user");
             const amount = interaction.options.getInteger("amount");
 
-            if (!target) return interaction.reply("Invalid user.");
-            if (amount <= 0) return interaction.reply("Invalid amount.");
+            if (!target || amount <= 0) return interaction.reply("Invalid input.");
             if (balances[userId] < amount) return interaction.reply("Not enough.");
 
-            getBalance(target.id);
+            if (!balances[target.id]) balances[target.id] = 500;
 
             balances[userId] -= amount;
             balances[target.id] += amount;
@@ -178,9 +155,7 @@ client.on("interactionCreate", async interaction => {
         if (name === "weekly") {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
-            for (const id in balances) {
-                balances[id] += 10;
-            }
+            for (const id in balances) balances[id] += 10;
 
             await saveData();
             return interaction.reply("Everyone got +10.");
@@ -207,15 +182,15 @@ const commands = [
         .setName("nominate")
         .setDescription("Bet system")
         .addStringOption(o =>
-            o.setName("player").setRequired(true).setDescription("Name"))
+            o.setName("player").setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount").setRequired(true).setDescription("Min 20")),
+            o.setName("amount").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("winner")
         .setDescription("Owner only")
         .addStringOption(o =>
-            o.setName("player").setRequired(true).setDescription("Winner")),
+            o.setName("player").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("leaderboard")
@@ -225,9 +200,9 @@ const commands = [
         .setName("transfer")
         .setDescription("Send money")
         .addUserOption(o =>
-            o.setName("user").setRequired(true).setDescription("User"))
+            o.setName("user").setRequired(true))
         .addIntegerOption(o =>
-            o.setName("amount").setRequired(true).setDescription("Amount")),
+            o.setName("amount").setRequired(true)),
 
     new SlashCommandBuilder()
         .setName("weekly")
@@ -242,9 +217,9 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-    try {
-        await loadData();
+    await loadData();
 
+    try {
         await rest.put(
             Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
             { body: commands }
@@ -255,15 +230,6 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
         console.log("Command register failed:", err);
     }
 })();
-
-// ================= EXPRESS =================
-const app = express();
-
-app.get("/", (req, res) => {
-    res.send("ABZ bot running");
-});
-
-app.listen(3000);
 
 // ================= LOGIN =================
 client.login(TOKEN);
