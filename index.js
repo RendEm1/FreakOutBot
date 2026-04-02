@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, Routes } = require('discord.js');
 const { REST } = require('@discordjs/rest');
-const fs = require('fs');
+const fs = require('fs/promises');
 const express = require('express');
 
 // ================= CONFIG =================
@@ -16,19 +16,27 @@ let balances = {};
 let nominations = {};
 
 // ================= LOAD / SAVE =================
-function loadData() {
-    if (fs.existsSync("data.json")) {
-        const data = JSON.parse(fs.readFileSync("data.json"));
+async function loadData() {
+    try {
+        const data = JSON.parse(await fs.readFile("data.json", "utf8"));
         balances = data.balances || {};
         nominations = data.nominations || {};
+        console.log("Data loaded");
+    } catch (err) {
+        console.log("No data file yet, starting fresh");
     }
 }
 
-function saveData() {
-    fs.writeFileSync("data.json", JSON.stringify({ balances, nominations }, null, 2));
+async function saveData() {
+    try {
+        await fs.writeFile(
+            "data.json",
+            JSON.stringify({ balances, nominations }, null, 2)
+        );
+    } catch (err) {
+        console.log("Save failed:", err);
+    }
 }
-
-loadData();
 
 // ================= SAFE HELPERS =================
 function getBalance(userId) {
@@ -45,28 +53,28 @@ const client = new Client({
 client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}`);
 
-    // heartbeat so Render doesn’t think it’s dead
     setInterval(() => {
-        console.log("heartbeat - bot alive");
+        console.log("heartbeat - bot alive | ws:", client.ws.status);
     }, 60000);
 });
 
-// ================= RECONNECT + ERROR HANDLING =================
+// ================= RECOVERY LOGGING =================
+client.on("reconnecting", () => {
+    console.log("Reconnecting to Discord...");
+});
+
+client.on("resume", () => {
+    console.log("Reconnected to Discord!");
+});
+
 client.on("disconnect", () => {
-    console.log("Bot disconnected - trying to recover...");
+    console.log("Disconnected from Discord gateway");
 });
 
-client.on("error", (err) => {
-    console.log("Discord error:", err);
-});
+client.on("error", console.error);
 
-process.on("unhandledRejection", (err) => {
-    console.log("Unhandled promise:", err);
-});
-
-process.on("uncaughtException", (err) => {
-    console.log("Crash caught:", err);
-});
+process.on("unhandledRejection", console.error);
+process.on("uncaughtException", console.error);
 
 // ================= COMMAND HANDLER =================
 client.on("interactionCreate", async interaction => {
@@ -98,7 +106,7 @@ client.on("interactionCreate", async interaction => {
             if (!nominations[player]) nominations[player] = [];
             nominations[player].push({ userId, amount });
 
-            saveData();
+            await saveData();
 
             return interaction.reply(`${interaction.user.username} bet ${amount} on "${player}"`);
         }
@@ -128,7 +136,7 @@ client.on("interactionCreate", async interaction => {
             }
 
             nominations = {};
-            saveData();
+            await saveData();
 
             return interaction.reply(`${player} wins! Pool: ${totalPool}`);
         }
@@ -161,7 +169,7 @@ client.on("interactionCreate", async interaction => {
             balances[userId] -= amount;
             balances[target.id] += amount;
 
-            saveData();
+            await saveData();
 
             return interaction.reply(`Sent ${amount} to ${target.username}`);
         }
@@ -174,7 +182,7 @@ client.on("interactionCreate", async interaction => {
                 balances[id] += 10;
             }
 
-            saveData();
+            await saveData();
             return interaction.reply("Everyone got +10.");
         }
 
@@ -183,7 +191,7 @@ client.on("interactionCreate", async interaction => {
             if (userId !== OWNER_ID) return interaction.reply("Owner only.");
 
             nominations = {};
-            saveData();
+            await saveData();
 
             return interaction.reply("Cleared.");
         }
@@ -234,14 +242,21 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 (async () => {
-    await rest.put(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-        { body: commands }
-    );
-    console.log("Commands registered.");
+    try {
+        await loadData();
+
+        await rest.put(
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+            { body: commands }
+        );
+
+        console.log("Commands registered.");
+    } catch (err) {
+        console.log("Command register failed:", err);
+    }
 })();
 
-// ================= EXPRESS KEEP ALIVE =================
+// ================= EXPRESS =================
 const app = express();
 
 app.get("/", (req, res) => {
